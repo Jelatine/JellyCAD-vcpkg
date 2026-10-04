@@ -1,0 +1,133 @@
+name: Build vcpkg
+
+on:
+  workflow_dispatch:  # 手动触发
+    inputs:
+      vcpkg_version:
+        description: 'vcpkg版本(git tag)'
+        required: true
+        default: '2026.06.24'
+
+permissions:
+  contents: write
+
+env:
+  VCPKG_VERSION: ${{ inputs.vcpkg_version }}
+  RELEASE_TAG: vcpkg-${{ inputs.vcpkg_version }}
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  create_release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 创建Release
+        run: |
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" \
+              --notes "vcpkg ${VCPKG_VERSION} 预编译产物 (lua sol2 qtbase opencascade gtest)"
+          fi
+
+  build_windows:
+    needs: create_release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: 下载vcpkg仓库(windows)
+        run: |
+          cd ${{github.workspace}}
+          git clone https://github.com/Microsoft/vcpkg.git -b ${{ env.VCPKG_VERSION }}
+          ${{github.workspace}}/vcpkg/bootstrap-vcpkg.bat
+          ${{github.workspace}}/vcpkg/vcpkg install lua sol2 qtbase opencascade gtest
+
+      - name: Clean Vcpkg
+        shell: bash
+        run: rm -rf vcpkg/buildtrees vcpkg/downloads vcpkg/packages vcpkg/.git
+
+      - name: 打包并上传Release
+        shell: bash
+        run: bash repo/scripts/package_upload.sh
+
+  build_ubuntu:
+    needs: create_release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libltdl-dev libxcb*
+          sudo apt-get install -y libx11* libgl1-mesa-dev libxrender-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-dev
+          sudo apt-get install -y libxtst-dev pkg-config autoconf libtool bison libglu1-mesa-dev freeglut3-dev
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libgles2-mesa-dev libdrm-dev libgbm-dev libsm-dev libcups2-dev libmtdev-dev libts-dev
+          sudo apt-get install -y autoconf-archive
+
+      - name: 下载vcpkg仓库(ubuntu)
+        run: |
+          cd ${{github.workspace}}
+          git clone https://github.com/Microsoft/vcpkg.git -b ${{ env.VCPKG_VERSION }}
+          ${{github.workspace}}/vcpkg/bootstrap-vcpkg.sh
+
+      - name: vcpack安装qtbase(ubuntu)
+        run: |
+          ${{github.workspace}}/vcpkg/vcpkg install qtbase
+          rm -rf vcpkg/buildtrees vcpkg/downloads vcpkg/packages
+
+      - name: vcpack安装opencascade(ubuntu)
+        run: |
+          ${{github.workspace}}/vcpkg/vcpkg install opencascade
+          rm -rf vcpkg/buildtrees vcpkg/downloads vcpkg/packages
+
+      - name: vcpack安装other(ubuntu)
+        run: |
+          ${{github.workspace}}/vcpkg/vcpkg install lua sol2 gtest
+          rm -rf vcpkg/buildtrees vcpkg/downloads vcpkg/packages vcpkg/.git
+
+      - name: 打包并上传Release
+        shell: bash
+        run: bash repo/scripts/package_upload.sh
+
+  build_macos:
+    needs: create_release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: 下载vcpkg仓库(macos)
+        run: |
+          cd ${{github.workspace}}
+          git clone https://github.com/Microsoft/vcpkg.git -b ${{ env.VCPKG_VERSION }}
+          ${{github.workspace}}/vcpkg/bootstrap-vcpkg.sh
+
+      - name: 安装依赖(macos)
+        run: brew install autoconf automake autoconf-archive libtool
+
+      - name: vcpack安装(macos)
+        run: ${{github.workspace}}/vcpkg/vcpkg install qtbase lua sol2 opencascade gtest
+
+      - name: Clean Vcpkg
+        run: rm -rf vcpkg/buildtrees vcpkg/downloads vcpkg/packages vcpkg/.git
+
+      - name: 打包并上传Release
+        shell: bash
+        run: bash repo/scripts/package_upload.sh
