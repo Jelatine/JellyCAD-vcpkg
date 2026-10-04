@@ -30,7 +30,7 @@ jobs:
 
   build_windows:
     needs: create_release
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v7
         with:
@@ -107,7 +107,7 @@ jobs:
 
   build_macos:
     needs: create_release
-    runs-on: macos-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
         with:
